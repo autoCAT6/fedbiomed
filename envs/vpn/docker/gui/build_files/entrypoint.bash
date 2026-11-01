@@ -42,7 +42,7 @@ if [ ! -d /certs ]; then
 fi
 
 # Find number of files in /certs directory and ignore .gitkeep
-num_files=$(find gui/run_mounts/certs -mindepth 1 -type f ! -path '*.gitkeep' -printf x | wc -c)
+num_files=$(find /certs -mindepth 1 -type f ! -path '*.gitkeep' -printf x | wc -c)
 
 if [ "$num_files" != 0 ]; then
      echo "Mounted certs directory is not empty. Checking certificates are existing..."
