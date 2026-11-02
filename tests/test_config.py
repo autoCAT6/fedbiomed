@@ -307,7 +307,7 @@ def test_node_config_retires_automatic_approval_and_hash_options(
     tmp_path, approval, monkeypatch
 ):
     """Old flags disappear from persisted config and GUI without changing approval mode."""
-    from fedbiomed_gui.server.helpers.config_schema import get_config_sections_schema
+    from fedbiomed_node_api.helpers.config_schema import get_config_sections_schema
 
     (tmp_path / "etc").mkdir()
     monkeypatch.setattr(Config, "vars", dict(Config.vars))

@@ -73,6 +73,74 @@ def _manager(path):
     )
 
 
+@pytest.mark.parametrize("gui", [False, True])
+@pytest.mark.parametrize("legacy", [False, True])
+def test_application_approval_requires_authentication_and_survives_restart(
+    tmp_path, monkeypatch, gui, legacy
+):
+    """Both application factories must use the migrated approval manager."""
+    from flask_jwt_extended import create_access_token
+
+    from fedbiomed.node.config import NodeComponent
+    from fedbiomed_node_api.application import create_app
+
+    if gui:
+        from fedbiomed_gui.server.application import create_app
+
+    root = tmp_path / "node"
+    config = NodeComponent().initiate(str(root))
+    config.set("security", "training_plan_approval", "True")
+    config.write()
+    monkeypatch.setenv("DATA_PATH", str(root / "data"))
+    if legacy:
+        _seed(
+            root / "etc" / config.get("default", "db"),
+            [_record("tutorial", kind="default", algorithm="SHA512")],
+        )
+
+    app = create_app(root, {"TESTING": True})
+    manager = app.extensions["node_api_services"]["training_plan_manager"]
+    assert manager._tp_approval
+    if not legacy:
+        assert not manager._db.all()
+        request = ApprovalRequest(
+            researcher_id="researcher_fixture",
+            request_id="request_fixture",
+            training_plan=SOURCE,
+            description="Synthetic tutorial",
+        )
+        assert manager.reply_training_plan_approval_request(request).success
+    exists, record = manager.check_training_plan_status(
+        SOURCE, TrainingPlanApprovalStatus.PENDING
+    )
+    assert exists
+    identifier = record["training_plan_id"]
+
+    for action, status in (
+        ("approve", TrainingPlanApprovalStatus.APPROVED),
+        ("reject", TrainingPlanApprovalStatus.REJECTED),
+    ):
+        client = app.test_client()
+        body = {"training_plan_id": identifier}
+        assert client.post(f"/api/training-plan/{action}", json=body).status_code == 401
+        assert not manager.check_training_plan_status(SOURCE, status)[0]
+        with app.app_context():
+            headers = {
+                "Authorization": "Bearer " + create_access_token(identity="test")
+            }
+        response = client.post(
+            f"/api/training-plan/{action}", json=body, headers=headers
+        )
+        assert response.status_code == 200
+        assert response.json["success"]
+        manager._tinydb.close()
+        app = create_app(root, {"TESTING": True})
+        manager = app.extensions["node_api_services"]["training_plan_manager"]
+        assert manager.check_training_plan_status(SOURCE, status)[0]
+        assert manager.get_training_plan_by_id(identifier)["algorithm"] == "SHA256"
+    manager._tinydb.close()
+
+
 @pytest.mark.parametrize("status", ["Approved", "Pending", "Rejected"])
 def test_legacy_defaults_require_explicit_review_without_losing_records(
     tmp_path, status
